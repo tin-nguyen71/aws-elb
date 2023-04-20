@@ -1,0 +1,257 @@
+aws_region    = "ap-southeast-1"
+master_prefix = "dso-dev"
+vpc_id        = "vpc-00aadbd61d1d65a25"
+subnet_tag    = "webapp-*"
+elb_name      = "alb-common"
+
+## NLB ##
+load_balancer_type = "network"
+#  TCP_UDP, UDP, TCP
+http_tcp_listeners = [
+  {
+    port               = 81
+    protocol           = "TCP_UDP"
+    target_group_index = 0
+  },
+  {
+    port               = 82
+    protocol           = "UDP"
+    target_group_index = 1
+  },
+  {
+    port               = 83
+    protocol           = "TCP"
+    target_group_index = 2
+  },
+]
+
+#  TLS
+https_listeners = [
+  {
+    port               = 84
+    protocol           = "TLS"
+    certificate_arn    = "arn:aws:acm:ap-southeast-1:573972567421:certificate/8dee1f75-eb0c-451d-bd67-ae4f2eebd73e"
+    target_group_index = 3
+  },
+]
+
+target_groups = [
+  {
+    name        = "tu1"
+    backend_protocol   = "TCP_UDP"
+    backend_port       = 81
+    target_type        = "instance"
+    preserve_client_ip = true
+    tags = {
+      tcp_udp = true
+    }
+  },
+  {
+    name      = "u1"
+    backend_protocol = "UDP"
+    backend_port     = 82
+    target_type      = "instance"
+  },
+  {
+    name          = "t1"
+    backend_protocol     = "TCP"
+    backend_port         = 83
+    target_type          = "ip"
+    deregistration_delay = 10
+    health_check = {
+      enabled             = true
+      interval            = 30
+      path                = "/healthz"
+      port                = "traffic-port"
+      healthy_threshold   = 3
+      unhealthy_threshold = 3
+      timeout             = 6
+    }
+  },
+  {
+    name      = "t2"
+    backend_protocol = "TLS"
+    backend_port     = 84
+    target_type      = "instance"
+  },
+]
+
+## ALB ##
+
+http_tcp_listeners = [
+  # Forward action is default, either when defined or undefined
+  {
+    port               = 80
+    protocol           = "HTTP"
+    target_group_index = 0
+    # action_type        = "forward"
+  },
+  {
+    port        = 81
+    protocol    = "HTTP"
+    action_type = "redirect"
+    redirect = {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  },
+  {
+    port        = 82
+    protocol    = "HTTP"
+    action_type = "fixed-response"
+    fixed_response = {
+      content_type = "text/plain"
+      message_body = "Fixed message"
+      status_code  = "200"
+    }
+  },
+]
+
+https_listeners = [
+  {
+    port               = 443
+    protocol           = "HTTPS"
+    certificate_arn    = "arn:aws:acm:ap-southeast-1:573972567421:certificate/8dee1f75-eb0c-451d-bd67-ae4f2eebd73e"
+    target_group_index = 0
+  },
+]
+
+https_listener_rules = [
+  {
+    https_listener_index = 0
+    priority             = 3
+    actions = [{
+      type         = "fixed-response"
+      content_type = "text/plain"
+      status_code  = 200
+      message_body = "This is a fixed response"
+    }]
+
+    conditions = [{
+      http_headers = [{
+        http_header_name = "x-Gimme-Fixed-Response"
+        values           = ["yes", "please", "right now"]
+      }]
+    }]
+  },
+  {
+    https_listener_index = 0
+    priority             = 4
+
+    actions = [{
+      type = "weighted-forward"
+      target_groups = [
+        {
+          target_group_index = 0
+          weight             = 2
+        },
+        {
+          target_group_index = 0
+          weight             = 1
+        }
+      ]
+      stickiness = {
+        enabled  = true
+        duration = 3600
+      }
+    }]
+
+    conditions = [{
+      query_strings = [{
+        key   = "weighted"
+        value = "true"
+      }]
+    }]
+  },
+  {
+    https_listener_index = 0
+    priority             = 5000
+    actions = [{
+      type        = "redirect"
+      status_code = "HTTP_302"
+      host        = "www.youtube.com"
+      path        = "/watch"
+      query       = "v=dQw4w9WgXcQ"
+      protocol    = "HTTPS"
+    }]
+
+    conditions = [{
+      query_strings = [{
+        key   = "video"
+        value = "random"
+      }]
+    }]
+  },
+]
+
+http_tcp_listener_rules = [
+  {
+    http_tcp_listener_index = 0
+    priority                = 3
+    actions = [{
+      type         = "fixed-response"
+      content_type = "text/plain"
+      status_code  = 200
+      message_body = "This is a fixed response"
+    }]
+
+    conditions = [{
+      http_headers = [{
+        http_header_name = "x-Gimme-Fixed-Response"
+        values           = ["yes", "please", "right now"]
+      }]
+    }]
+  },
+  {
+    http_tcp_listener_index = 0
+    priority                = 5000
+    actions = [{
+      type        = "redirect"
+      status_code = "HTTP_302"
+      host        = "www.youtube.com"
+      path        = "/watch"
+      query       = "v=dQw4w9WgXcQ"
+      protocol    = "HTTPS"
+    }]
+
+    conditions = [{
+      query_strings = [{
+        key   = "video"
+        value = "random"
+      }]
+    }]
+  },
+]
+
+target_groups = [
+  {
+    name        = "h1"
+    backend_protocol     = "HTTP"
+    backend_port         = 80
+    target_type          = "instance"
+    deregistration_delay = 10
+    health_check = {
+      enabled             = true
+      interval            = 30
+      path                = "/healthz"
+      port                = "traffic-port"
+      healthy_threshold   = 3
+      unhealthy_threshold = 3
+      timeout             = 6
+      protocol            = "HTTP"
+      matcher             = "200-399"
+    }
+    protocol_version = "HTTP1"
+    targets = {
+      my_ec2 = {
+        target_id = "i-024791c3e47a2a91e"
+        port      = 80
+      },
+      my_ec2_again = {
+        target_id = "i-024791c3e47a2a91e"
+        port      = 8080
+      }
+    }
+  }
+]
